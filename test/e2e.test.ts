@@ -1,13 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Foundry, type DeployedContract } from "@adraffy/blocksmith";
+import { RESOLVE_ABI } from "@namestone/ezccip";
 import { serve } from "@namestone/ezccip/serve";
-import {
-	dnsEncode,
-	EnsResolver,
-	getAddress,
-	Interface,
-	ZeroHash,
-} from "ethers";
+import { dnsEncode, EnsResolver, getAddress, ZeroHash } from "ethers";
+
+const A = "0x51050ec063d393217B436747617aD1C2285Aeeee";
 
 describe("e2e", () => {
 	let F: Foundry;
@@ -15,14 +12,13 @@ describe("e2e", () => {
 	let R: DeployedContract;
 	beforeAll(async () => {
 		F = await Foundry.launch();
-		afterAll(F.shutdown);
 		S = await serve(
 			(name) => {
 				if (name === "raffy.eth") {
 					return {
 						addr(coinType) {
 							if (coinType == 0x8000_0000n) {
-								return "0x51050ec063d393217B436747617aD1C2285Aeeee";
+								return A;
 							}
 						},
 						text(key) {
@@ -33,18 +29,21 @@ describe("e2e", () => {
 			},
 			{ protocol: "ens" }
 		);
-		afterAll(S.shutdown);
 		R = await F.deploy({
 			file: "OffchainResolver",
-			args: [S.signer, [S.endpoint]],
+			args: [[S.signer], [S.endpoint]],
 		});
 	});
+	afterAll(() => F?.shutdown);
+	afterAll(() => S?.shutdown);
 
-	const abi = new Interface([
-		`function multicall(bytes[]) view returns (bytes[])`,
-		`function addr(bytes32, uint256) view returns (bytes)`,
-		`function text(bytes32, string) view returns (string)`,
-	]);
+	test("toggle signer", async () => {
+		expect(R.isSigner(A)).resolves.toBeFalse();
+		await R.setSigner(A, true);
+		expect(R.isSigner(A)).resolves.toBeTrue();
+		await R.setSigner(A, false);
+		expect(R.isSigner(A)).resolves.toBeFalse();
+	});
 
 	test("unknown name", async () => {
 		const r = new EnsResolver(F.provider, R.target, "__dne");
@@ -54,31 +53,30 @@ describe("e2e", () => {
 
 	test("resolve", async () => {
 		const r = new EnsResolver(F.provider, R.target, "raffy.eth");
-		expect(r.getAddress(), "addr(60)").resolves.toStrictEqual(
-			"0x51050ec063d393217B436747617aD1C2285Aeeee"
-		);
+		expect(r.getAddress(), "addr(60)").resolves.toStrictEqual(A);
 		expect(r.getText("abc"), "text(abc)").resolves.toStrictEqual("key is abc");
 	});
 
 	test("multicall", async () => {
-		const [answers] = abi.decodeFunctionResult(
+		const [answers] = RESOLVE_ABI.decodeFunctionResult(
 			"multicall",
 			await R.resolve(
 				dnsEncode("raffy.eth"),
-				abi.encodeFunctionData("multicall", [
+				RESOLVE_ABI.encodeFunctionData("multicall", [
 					[
-						abi.encodeFunctionData("addr", [ZeroHash, 60]),
-						abi.encodeFunctionData("text", [ZeroHash, "abc"]),
+						RESOLVE_ABI.encodeFunctionData("addr(bytes32)", [ZeroHash]),
+						RESOLVE_ABI.encodeFunctionData("text", [ZeroHash, "abc"]),
 					],
 				]),
 				{ enableCcipRead: true }
 			)
 		);
-		const [addr] = abi.decodeFunctionResult("addr", answers[0]);
-		const [text] = abi.decodeFunctionResult("text", answers[1]);
-		expect(getAddress(addr)).toStrictEqual(
-			"0x51050ec063d393217B436747617aD1C2285Aeeee"
+		const [addr] = RESOLVE_ABI.decodeFunctionResult(
+			"addr(bytes32)",
+			answers[0]
 		);
+		const [text] = RESOLVE_ABI.decodeFunctionResult("text", answers[1]);
+		expect(getAddress(addr)).toStrictEqual(A);
 		expect(text).toStrictEqual("key is abc");
 	});
 });

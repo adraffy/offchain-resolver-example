@@ -18,18 +18,24 @@ contract OffchainResolver is
     IERC7996
 {
     error CCIPReadExpired(uint64 expiry);
-    error CCIPReadUntrusted(address signed, address expected);
+    error CCIPReadUntrusted(address signed);
+
+    event SignerChanged(address signer, bool enabled);
 
     string[] _gateways;
 
     /// @notice The current offchain signer.
-    address public signer;
+    mapping(address signer => bool enabled) public isSigner;
 
     constructor(
-        address signer_,
+        address[] memory signers,
         string[] memory gateways_
     ) Ownable(msg.sender) {
-        signer = signer_;
+        for (uint256 i; i < signers.length; ++i) {
+            address signer = signers[i];
+            isSigner[signer] = true;
+            emit SignerChanged(signer, true);
+        }
         _gateways = gateways_;
     }
 
@@ -50,8 +56,10 @@ contract OffchainResolver is
     }
 
     /// @notice Set the offchain signer.
-    function setSigner(address signer_) external onlyOwner {
-        signer = signer_;
+    function setSigner(address signer, bool enabled) external onlyOwner {
+        require(isSigner[signer] != enabled);
+        isSigner[signer] = enabled;
+        emit SignerChanged(signer, enabled);
     }
 
     /// @notice Set the gateways.
@@ -108,8 +116,8 @@ contract OffchainResolver is
             )
         );
         address signed = ECDSA.recover(hash, sig);
-        if (signed != signer) {
-            revert CCIPReadUntrusted(signed, signer);
+        if (!isSigner[signed]) {
+            revert CCIPReadUntrusted(signed);
         }
         return answer;
     }
