@@ -9,7 +9,7 @@ optimizer_runs = 1
 
 remappings = [
 	"@ens/=lib/ens-contracts/contracts/",
-    "@oz/=lib/openzeppelin-contracts/contracts/",
+	"@oz/=lib/openzeppelin-contracts/contracts/",
 ]
 
 # forge i foundry-rs/forge-std
