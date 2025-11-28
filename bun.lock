@@ -5,7 +5,7 @@
       "name": "offchain-resolver-example",
       "devDependencies": {
         "@adraffy/blocksmith": "^0.1.57",
-        "@namestone/ezccip": "^0.1.1",
+        "@namestone/ezccip": "^0.1.2",
         "@types/bun": "latest",
         "ethers": "^6.15.0",
       },
@@ -19,7 +19,7 @@
 
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.10.1", "", {}, "sha512-96Z2IP3mYmF1Xg2cDm8f1gWGf/HUVedQ3FMifV4kG/PQ4yEP51xDtRAEfhVNt5f/uzpNkZHwWQuUcu6D6K+Ekw=="],
 
-    "@namestone/ezccip": ["@namestone/ezccip@0.1.1", "", { "dependencies": { "ethers": "^6.13.4" } }, "sha512-MZ0pLyAT695OfbXGIKNqHRHylIsk9KHMhpRP3ZgHVJxv5TZi1ouptylfEYr05qDqX33wYnR1w9BIqvcYcqruvA=="],
+    "@namestone/ezccip": ["@namestone/ezccip@0.1.2", "", { "dependencies": { "ethers": "^6.15.0" } }, "sha512-yVzNmGmrdk4YG1SBvz/rhmiG4ijsUmJox2ihP1wF2COw6c2rY7l29x40plxn8bC5OgvVKnE8o9KKF65Q/Qt4JA=="],
 
     "@noble/curves": ["@noble/curves@1.2.0", "", { "dependencies": { "@noble/hashes": "1.3.2" } }, "sha512-oYclrNgRaM9SsBUBVbb8M6DTV7ZHRTKugureoYEncY5c65HOmRzvSiTE3y5CYaPYJA/GVkrhXEoF0M3Ya9PMnw=="],
 

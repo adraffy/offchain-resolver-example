@@ -19,8 +19,10 @@ contract OffchainResolver is
 {
     error CCIPReadExpired(uint64 expiry);
     error CCIPReadUntrusted(address signed);
+    error UnsupportedResolverProfile(bytes4 selector);
 
     event SignerChanged(address signer, bool enabled);
+    event GatewaysChanged(string[] gateways);
 
     string[] _gateways;
 
@@ -28,15 +30,17 @@ contract OffchainResolver is
     mapping(address signer => bool enabled) public isSigner;
 
     constructor(
+        address owner,
         address[] memory signers,
         string[] memory gateways_
-    ) Ownable(msg.sender) {
+    ) Ownable(owner) {
         for (uint256 i; i < signers.length; ++i) {
             address signer = signers[i];
             isSigner[signer] = true;
             emit SignerChanged(signer, true);
         }
         _gateways = gateways_;
+        emit GatewaysChanged(gateways_);
     }
 
     /// @inheritdoc ERC165
@@ -65,6 +69,7 @@ contract OffchainResolver is
     /// @notice Set the gateways.
     function setGateways(string[] memory gateways_) external onlyOwner {
         _gateways = gateways_;
+        emit GatewaysChanged(gateways_);
     }
 
     /// @inheritdoc IGatewayProvider
@@ -80,9 +85,9 @@ contract OffchainResolver is
         revert OffchainLookup(
             address(this),
             _gateways,
-            msg.data,
+            msg.data, // forward request to offchain server
             this.resolveCallback.selector,
-            msg.data
+            msg.data // remember request since we sign over (address, expiry, request, response)
         );
     }
 
@@ -106,13 +111,14 @@ contract OffchainResolver is
         if (expiry < block.timestamp) {
             revert CCIPReadExpired(expiry);
         }
+        // standard "ens" offchain signing protocol
         bytes32 hash = keccak256(
             abi.encodePacked(
                 hex"1900",
                 address(this),
                 expiry,
-                keccak256(request),
-                keccak256(answer)
+                keccak256(request), // original calldata, eg. msg.data
+                keccak256(answer) // response from server
             )
         );
         address signed = ECDSA.recover(hash, sig);

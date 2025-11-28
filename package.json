@@ -5,7 +5,7 @@
   "private": true,
   "devDependencies": {
     "@adraffy/blocksmith": "^0.1.57",
-    "@namestone/ezccip": "^0.1.1",
+    "@namestone/ezccip": "^0.1.2",
     "@types/bun": "latest",
     "ethers": "^6.15.0"
   },

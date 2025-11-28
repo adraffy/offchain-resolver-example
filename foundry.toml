@@ -10,6 +10,7 @@ optimizer_runs = 1
 remappings = [
 	"@ens/=lib/ens-contracts/contracts/",
 	"@oz/=lib/openzeppelin-contracts/contracts/",
+	"lib/ens-contracts/:@openzeppelin/contracts-v5=lib/openzeppelin-contracts/contracts/" # for UniversalResolver.sol
 ]
 
 # forge i foundry-rs/forge-std
