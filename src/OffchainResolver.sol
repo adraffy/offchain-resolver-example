@@ -19,7 +19,6 @@ contract OffchainResolver is
 {
     error CCIPReadExpired(uint64 expiry);
     error CCIPReadUntrusted(address signed);
-    error UnsupportedResolverProfile(bytes4 selector);
 
     event SignerChanged(address signer, bool enabled);
     event GatewaysChanged(string[] gateways);
