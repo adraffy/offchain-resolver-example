@@ -184,6 +184,7 @@ describe("e2e", () => {
 		expect(value).toStrictEqual(CH);
 	});
 
+	// note: this is only 1 ccip-read call
 	test("direct: multicall()", async () => {
 		const [answers] = RESOLVE_ABI.decodeFunctionResult(
 			"multicall",
@@ -236,5 +237,38 @@ describe("e2e", () => {
 		expect(resolver, "resolver").toStrictEqual(OR.target);
 		const [value] = RESOLVE_ABI.decodeFunctionResult("text", answer);
 		expect(value).toStrictEqual("key is abc");
+	});
+
+	// note: this is only 1 ccip-read call
+	test("UR: multicall()", async () => {
+		const [answer, resolver] = await UR.resolve(
+			dnsEncode("raffy.eth"),
+			RESOLVE_ABI.encodeFunctionData("multicall", [
+				[
+					RESOLVE_ABI.encodeFunctionData("addr(bytes32)", [ZeroHash]), // addr(60)
+					RESOLVE_ABI.encodeFunctionData("addr(bytes32,uint256)", [
+						ZeroHash,
+						0,
+					]), // addr(0)
+					RESOLVE_ABI.encodeFunctionData("text", [ZeroHash, "abc"]), //text("abc")
+				],
+			]),
+			{ enableCcipRead: true }
+		);
+		const [answers] = RESOLVE_ABI.decodeFunctionResult("multicall", answer);
+		expect(resolver, "resolver").toStrictEqual(OR.target);
+
+		const [addr60] = RESOLVE_ABI.decodeFunctionResult(
+			"addr(bytes32)",
+			answers[0]
+		);
+		const [addr0] = RESOLVE_ABI.decodeFunctionResult(
+			"addr(bytes32,uint256)",
+			answers[1]
+		);
+		const [text] = RESOLVE_ABI.decodeFunctionResult("text", answers[2]);
+		expect(addr60).toStrictEqual(ETH);
+		expect(addr0).toStrictEqual(BTC);
+		expect(text).toStrictEqual("key is abc");
 	});
 });
