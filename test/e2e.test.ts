@@ -1,8 +1,16 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	test,
+} from "bun:test";
 import { Foundry, type DeployedContract } from "@adraffy/blocksmith";
 import { RESOLVE_ABI } from "@namestone/ezccip";
 import { serve } from "@namestone/ezccip/serve";
 import { dnsEncode, namehash, id as labelhash, ZeroHash } from "ethers";
+import { serveBatchGateway } from "./localBatchGateway.ts";
 
 // test constants
 const ETH = "0x51050ec063d393217B436747617aD1C2285Aeeee";
@@ -14,6 +22,7 @@ describe("e2e", () => {
 	let S: Awaited<ReturnType<typeof serve>>;
 	let OR: DeployedContract;
 	let UR: DeployedContract;
+	let ENS: DeployedContract;
 	beforeAll(async () => {
 		F = await Foundry.launch({ infoLog: false }); // enable to show anvil events
 		// deploy OffchainResolver
@@ -58,7 +67,7 @@ describe("e2e", () => {
 		// in an URL as the "origin" of the ccip request
 		await F.confirm(OR.setGateways([`${S.endpoint}/${OR.target}`]));
 		// deploy ENS registry
-		const ENS = await F.deploy({
+		ENS = await F.deploy({
 			import: "@ens/registry/ENSRegistry.sol",
 		});
 		// setup "addr.reverse" to handle ReverseClaimer.claim() on UR
@@ -257,7 +266,54 @@ describe("e2e", () => {
 		);
 		const [answers] = RESOLVE_ABI.decodeFunctionResult("multicall", answer);
 		expect(resolver, "resolver").toStrictEqual(OR.target);
+		const [addr60] = RESOLVE_ABI.decodeFunctionResult(
+			"addr(bytes32)",
+			answers[0]
+		);
+		const [addr0] = RESOLVE_ABI.decodeFunctionResult(
+			"addr(bytes32,uint256)",
+			answers[1]
+		);
+		const [text] = RESOLVE_ABI.decodeFunctionResult("text", answers[2]);
+		expect(addr60).toStrictEqual(ETH);
+		expect(addr0).toStrictEqual(BTC);
+		expect(text).toStrictEqual("key is abc");
+	});
 
+	test("UR: multicall() w/o Multicall feature", async () => {
+		// deploy a modified OffchainResolver disabled features
+		const HR = await F.deploy({
+			sol: `import "@src/OffchainResolver.sol";
+				contract HR is OffchainResolver {
+					constructor(address[] memory ss) OffchainResolver(msg.sender, ss, new string[](0)) {}
+					function supportsFeature(bytes4) external pure override returns (bool) {
+						return false;
+					}
+				}`,
+			args: [[S.signer]],
+		});
+		await F.confirm(HR.setGateways([`${S.endpoint}/${HR.target}`]));
+		await F.confirm(ENS.setResolver(namehash("raffy.eth"), HR)); // replace resolver in registry
+		// setup local batch gateway to facilitate multicall
+		const { shutdown, localBatchGatewayUrl } = await serveBatchGateway();
+		afterEach(shutdown);
+		const [answer, resolver] = await UR.resolveWithGateways(
+			dnsEncode("raffy.eth"),
+			RESOLVE_ABI.encodeFunctionData("multicall", [
+				[
+					RESOLVE_ABI.encodeFunctionData("addr(bytes32)", [ZeroHash]), // addr(60)
+					RESOLVE_ABI.encodeFunctionData("addr(bytes32,uint256)", [
+						ZeroHash,
+						0,
+					]), // addr(0)
+					RESOLVE_ABI.encodeFunctionData("text", [ZeroHash, "abc"]), //text("abc")
+				],
+			]),
+			[localBatchGatewayUrl],
+			{ enableCcipRead: true }
+		);
+		const [answers] = RESOLVE_ABI.decodeFunctionResult("multicall", answer);
+		expect(resolver, "resolver").toStrictEqual(HR.target);
 		const [addr60] = RESOLVE_ABI.decodeFunctionResult(
 			"addr(bytes32)",
 			answers[0]

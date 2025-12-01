@@ -1,15 +1,14 @@
 {
-  "name": "offchain-resolver-example",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@adraffy/blocksmith": "^0.1.57",
-    "@namestone/ezccip": "^0.1.2",
-    "@types/bun": "latest",
-    "ethers": "^6.15.0"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  }
+	"name": "offchain-resolver-example",
+	"type": "module",
+	"private": true,
+	"devDependencies": {
+		"@adraffy/blocksmith": "^0.1.57",
+		"@namestone/ezccip": "^0.1.2",
+		"@types/bun": "latest",
+		"ethers": "^6.15.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	}
 }

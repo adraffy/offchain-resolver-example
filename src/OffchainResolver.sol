@@ -54,7 +54,9 @@ contract OffchainResolver is
     }
 
     /// @inheritdoc IERC7996
-    function supportsFeature(bytes4 featureId) external pure returns (bool) {
+    function supportsFeature(
+        bytes4 featureId
+    ) external pure virtual returns (bool) {
         return featureId == ResolverFeatures.RESOLVE_MULTICALL;
     }
 
