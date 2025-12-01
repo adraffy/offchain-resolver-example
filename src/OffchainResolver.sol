@@ -25,7 +25,7 @@ contract OffchainResolver is
 
     string[] _gateways;
 
-    /// @notice The current offchain signer.
+    /// @notice Determine if `signer` is a trusted signer.
     mapping(address signer => bool enabled) public isSigner;
 
     constructor(
@@ -58,7 +58,7 @@ contract OffchainResolver is
         return featureId == ResolverFeatures.RESOLVE_MULTICALL;
     }
 
-    /// @notice Set the offchain signer.
+    /// @notice Set `signer` as an trusted signer.
     function setSigner(address signer, bool enabled) external onlyOwner {
         require(isSigner[signer] != enabled);
         isSigner[signer] = enabled;
