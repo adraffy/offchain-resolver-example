@@ -1,12 +1,5 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	describe,
-	expect,
-	test,
-} from "bun:test";
-import { Foundry, type DeployedContract } from "@adraffy/blocksmith";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { Foundry } from "@adraffy/blocksmith";
 import { RESOLVE_ABI } from "@namestone/ezccip";
 import { serve } from "@namestone/ezccip/serve";
 import { dnsEncode, namehash, id as labelhash, ZeroHash } from "ethers";
@@ -17,95 +10,109 @@ const ETH = "0x51050ec063d393217B436747617aD1C2285Aeeee";
 const BTC = "0xdeadfee5";
 const CH = "0x1234";
 
-describe("e2e", () => {
-	let F: Foundry;
-	let S: Awaited<ReturnType<typeof serve>>;
-	let OR: DeployedContract;
-	let UR: DeployedContract;
-	let ENS: DeployedContract;
-	beforeAll(async () => {
-		F = await Foundry.launch({ infoLog: false }); // enable to show anvil events
-		// deploy OffchainResolver
-		const { admin } = F.wallets;
-		OR = await F.deploy({
-			file: "OffchainResolver",
-			args: [admin, [], []],
-		});
-		// setup offchain server
-		S = await serve(
-			(name) => {
-				if (name === "raffy.eth") {
-					return {
-						addr(coinType) {
-							if (coinType === 0x8000_0000n) {
-								return ETH; // default address
-							} else if (coinType === 0n) {
-								return BTC;
-							}
-						},
-						text(key) {
-							return `key is ${key}`;
-						},
-						contenthash() {
-							return CH;
-						},
-						// if not a standard profile
-						// by default, ezccip will return UnsupportedResolverProfile()
-					};
-				}
-				// we dont know this name
-				// by default, ezccip will return UnreachableName()
-			},
-			{ protocol: "ens" }
-		);
-		// ezccip generates a random key if not specified
-		// add this key as a trusted signer
-		await F.confirm(OR.setSigner(S.signer, true));
-		// to support recursive ccip-read, we ignore the ccip sender,
-		// and instead sign relative to the contract we're supporting.
-		// note: ezccip automatically interprets the first address
-		// in an URL as the "origin" of the ccip request
-		await F.confirm(OR.setGateways([`${S.endpoint}/${OR.target}`]));
-		// deploy ENS registry
-		ENS = await F.deploy({
-			import: "@ens/registry/ENSRegistry.sol",
-		});
-		// setup "addr.reverse" to handle ReverseClaimer.claim() on UR
-		const FakeReverseRegistrar = await F.deploy(`contract X {
-			function claim(address) external pure returns (bytes32) {}
-		}`);
-		await F.confirm(ENS.setSubnodeOwner(ZeroHash, labelhash("reverse"), admin));
-		await F.confirm(
-			ENS.setSubnodeOwner(
-				namehash("reverse"),
-				labelhash("addr"),
-				FakeReverseRegistrar
-			)
-		);
-		// deploy UniversalResolver
-		const BatchGatewayProvider = await F.deploy({
-			import: "@ens/ccipRead/GatewayProvider.sol",
-			args: [admin, []], // no gateways are required since OffchainResolver supports ENSIP-22
-		});
-		UR = await F.deploy({
-			import: "@ens/universalResolver/UniversalResolver.sol",
-			args: [admin, ENS, BatchGatewayProvider],
-		});
-		// setup "raffy.eth"
-		await F.confirm(ENS.setSubnodeOwner(ZeroHash, labelhash("eth"), admin));
-		await F.confirm(
-			ENS.setSubnodeRecord(namehash("eth"), labelhash("raffy"), admin, OR, 0)
-		);
+describe("e2e", async () => {
+	const F = await Foundry.launch({ infoLog: false }); // enable to show anvil events
+	afterAll(F.shutdown);
+	await F.parseArtifacts(); // all interfaces
+
+	// deploy OffchainResolver
+	const { admin } = F.wallets;
+	const OffchainVerifier = await F.deploy({
+		file: "OffchainVerifier",
 	});
-	afterAll(() => F?.shutdown);
-	afterAll(() => S?.shutdown);
+	const OR = await F.deploy({
+		file: "OffchainResolver",
+		args: [admin],
+	});
+	// setup offchain server
+	const S = await serve(
+		(name) => {
+			if (name === "raffy.eth") {
+				return {
+					addr(coinType) {
+						if (coinType === 0x8000_0000n) {
+							return ETH; // default address
+						} else if (coinType === 0n) {
+							return BTC;
+						}
+					},
+					text(key) {
+						return `key is ${key}`;
+					},
+					contenthash() {
+						return CH;
+					},
+					// if not a standard profile
+					// by default, ezccip will return UnsupportedResolverProfile()
+				};
+			}
+			// we dont know this name
+			// by default, ezccip will return UnreachableName()
+		},
+		{ protocol: "ens" }
+	);
+	expect(
+		F.getEventResults(
+			await F.confirm(OR.setVerifier(OffchainVerifier)),
+			"VerifierChanged"
+		)
+	).toEqual<[[string, string]]>([["0x00", OffchainVerifier.target]]);
+	// ezccip generates a random key if not specified
+	// add this key as a trusted signer
+	expect(
+		F.getEventResults(
+			await F.confirm(OffchainVerifier.setOffchainSigner(OR, S.signer, true)),
+			"SignerChanged"
+		)
+	).toEqual<[[string, string, boolean]]>([[OR.target, S.signer, true]]);
+	// to support recursive ccip-read, we ignore the ccip sender,
+	// and instead sign relative to the contract we're supporting.
+	// note: ezccip automatically interprets the first address
+	// in an URL as the "origin" of the ccip request
+	const gateways = [`${S.endpoint}/${OR.target}`];
+	expect(
+		F.getEventResults(
+			await F.confirm(OR.setGateways(gateways)),
+			"GatewaysChanged"
+		)
+	).toEqual<[[string[]]]>([[gateways]]);
+	// deploy ENS registry
+	const ENS = await F.deploy({
+		import: "@ens/registry/ENSRegistry.sol",
+	});
+	// setup "addr.reverse" to handle ReverseClaimer.claim() on UR
+	const FakeReverseRegistrar = await F.deploy(`contract X {
+		function claim(address) external pure returns (bytes32) {}
+	}`);
+	await F.confirm(ENS.setSubnodeOwner(ZeroHash, labelhash("reverse"), admin));
+	await F.confirm(
+		ENS.setSubnodeOwner(
+			namehash("reverse"),
+			labelhash("addr"),
+			FakeReverseRegistrar
+		)
+	);
+	// deploy UniversalResolver
+	const BatchGatewayProvider = await F.deploy({
+		import: "@ens/ccipRead/GatewayProvider.sol",
+		args: [admin, []], // no gateways are required since OffchainResolver supports ENSIP-22
+	});
+	const UR = await F.deploy({
+		import: "@ens/universalResolver/UniversalResolver.sol",
+		args: [admin, ENS, BatchGatewayProvider],
+	});
+	// setup "raffy.eth"
+	await F.confirm(ENS.setSubnodeOwner(ZeroHash, labelhash("eth"), admin));
+	await F.confirm(
+		ENS.setSubnodeRecord(namehash("eth"), labelhash("raffy"), admin, OR, 0)
+	);
 
 	test("toggle signer", async () => {
-		expect(OR.isSigner(ETH)).resolves.toBeFalse();
-		await F.confirm(OR.setSigner(ETH, true));
-		expect(OR.isSigner(ETH)).resolves.toBeTrue();
-		await F.confirm(OR.setSigner(ETH, false));
-		expect(OR.isSigner(ETH)).resolves.toBeFalse();
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeFalse();
+		await F.confirm(OffchainVerifier.setOffchainSigner(OR, ETH, true));
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeTrue();
+		await F.confirm(OffchainVerifier.setOffchainSigner(OR, ETH, false));
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeFalse();
 	});
 
 	test("UnreachableName", async () => {
@@ -282,16 +289,15 @@ describe("e2e", () => {
 
 	test("UR: multicall() w/o Multicall feature", async () => {
 		// deploy a modified OffchainResolver disabled features
-		const HR = await F.deploy({
-			sol: `import "@src/OffchainResolver.sol";
-				contract HR is OffchainResolver {
-					constructor(address[] memory ss) OffchainResolver(msg.sender, ss, new string[](0)) {}
-					function supportsFeature(bytes4) external pure override returns (bool) {
-						return false;
-					}
-				}`,
-			args: [[S.signer]],
-		});
+		const HR = await F.deploy(`import "@src/OffchainResolver.sol";
+			contract HR is OffchainResolver(msg.sender) {
+				function supportsFeature(bytes4) external pure override returns (bool) {
+					return false;
+				}
+			}
+		`);
+		await F.confirm(HR.setVerifier(OffchainVerifier));
+		await F.confirm(OffchainVerifier.setOffchainSigner(HR, S.signer, true));
 		await F.confirm(HR.setGateways([`${S.endpoint}/${HR.target}`]));
 		await F.confirm(ENS.setResolver(namehash("raffy.eth"), HR)); // replace resolver in registry
 		// setup local batch gateway to facilitate multicall
