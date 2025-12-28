@@ -10,42 +10,21 @@ import {
     IVerifiableResolver
 } from "@ens/resolvers/profiles/IVerifiableResolver.sol";
 import {OffchainLookup} from "@ens/ccipRead/EIP3668.sol";
-import {IOffchainVerifier, IOffchainVerifierSigner} from "./IOffchainVerifier.sol";
+import {IOffchainVerifier} from "./IOffchainVerifier.sol";
 
 contract OffchainResolver is
     Ownable,
     ERC165,
     IExtendedResolver,
     IVerifiableResolver,
-    IOffchainVerifierSigner,
     IERC7996
 {
-    event SignerChanged(address signer, bool enabled);
     event GatewaysChanged(string[] gateways);
 
     IOffchainVerifier _verifier;
     string[] _gateways;
 
-    /// @notice Determine if `signer` is a trusted signer.
-    mapping(address signer => bool enabled) public isOffchainSigner;
-
-    constructor(
-        address owner,
-        IOffchainVerifier verifier,
-        address[] memory signers,
-        string[] memory gateways
-    ) Ownable(owner) {
-        _verifier = verifier;
-        for (uint256 i; i < signers.length; ++i) {
-            address signer = signers[i];
-            isOffchainSigner[signer] = true;
-            emit SignerChanged(signer, true);
-        }
-        if (gateways.length > 0) {
-            _gateways = gateways;
-            emit GatewaysChanged(gateways);
-        }
-    }
+    constructor(address owner) Ownable(owner) {}
 
     /// @inheritdoc ERC165
     function supportsInterface(
@@ -72,17 +51,16 @@ contract OffchainResolver is
         return (address(_verifier), _gateways);
     }
 
-    /// @notice Set `signer` as an trusted signer.
-    function setSigner(address signer, bool enabled) external onlyOwner {
-        require(isOffchainSigner[signer] != enabled);
-        isOffchainSigner[signer] = enabled;
-        emit SignerChanged(signer, enabled);
+    /// @notice Set the gateways.
+    function setGateways(string[] memory gateways) external onlyOwner {
+        _gateways = gateways;
+        emit GatewaysChanged(gateways);
     }
 
-    /// @notice Set the gateways.
-    function setGateways(string[] memory gateways_) external onlyOwner {
-        _gateways = gateways_;
-        emit GatewaysChanged(gateways_);
+    /// @notice Set the verifier.
+    function setVerifier(IOffchainVerifier verifier) external onlyOwner {
+        _verifier = verifier;
+        emit VerifierChanged(hex"00", address(verifier));
     }
 
     /// @inheritdoc IExtendedResolver

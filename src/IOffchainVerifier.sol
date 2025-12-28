@@ -9,7 +9,7 @@ interface IOffchainVerifier {
     error CCIPReadExpired(uint64 expiry);
     error CCIPReadUntrusted(address signed);
 
-    /// @notice Verify `response` was signed by `IOffchainVerifierSigner(msg.sender).isOffchainSigner()`.
+    /// @notice Verify `response` was signed by an authorized account.
     function verifyResponse(
         bytes calldata request,
         bytes calldata response

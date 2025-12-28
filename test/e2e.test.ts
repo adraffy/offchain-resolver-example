@@ -1,12 +1,5 @@
-import {
-	afterAll,
-	afterEach,
-	beforeAll,
-	describe,
-	expect,
-	test,
-} from "bun:test";
-import { Foundry, type DeployedContract } from "@adraffy/blocksmith";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { Foundry } from "@adraffy/blocksmith";
 import { RESOLVE_ABI } from "@namestone/ezccip";
 import { serve } from "@namestone/ezccip/serve";
 import { dnsEncode, namehash, id as labelhash, ZeroHash } from "ethers";
@@ -29,7 +22,7 @@ describe("e2e", async () => {
 	});
 	const OR = await F.deploy({
 		file: "OffchainResolver",
-		args: [admin, OffchainVerifier, [], []],
+		args: [admin],
 	});
 	// setup offchain server
 	const S = await serve(
@@ -58,14 +51,20 @@ describe("e2e", async () => {
 		},
 		{ protocol: "ens" }
 	);
+	expect(
+		F.getEventResults(
+			await F.confirm(OR.setVerifier(OffchainVerifier)),
+			"VerifierChanged"
+		)
+	).toEqual<[[string, string]]>([["0x00", OffchainVerifier.target]]);
 	// ezccip generates a random key if not specified
 	// add this key as a trusted signer
 	expect(
 		F.getEventResults(
-			await F.confirm(OR.setSigner(S.signer, true)),
+			await F.confirm(OffchainVerifier.setOffchainSigner(OR, S.signer, true)),
 			"SignerChanged"
 		)
-	).toEqual<[[string, boolean]]>([[S.signer, true]]);
+	).toEqual<[[string, string, boolean]]>([[OR.target, S.signer, true]]);
 	// to support recursive ccip-read, we ignore the ccip sender,
 	// and instead sign relative to the contract we're supporting.
 	// note: ezccip automatically interprets the first address
@@ -109,11 +108,11 @@ describe("e2e", async () => {
 	);
 
 	test("toggle signer", async () => {
-		expect(OR.isOffchainSigner(ETH)).resolves.toBeFalse();
-		await F.confirm(OR.setSigner(ETH, true));
-		expect(OR.isOffchainSigner(ETH)).resolves.toBeTrue();
-		await F.confirm(OR.setSigner(ETH, false));
-		expect(OR.isOffchainSigner(ETH)).resolves.toBeFalse();
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeFalse();
+		await F.confirm(OffchainVerifier.setOffchainSigner(OR, ETH, true));
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeTrue();
+		await F.confirm(OffchainVerifier.setOffchainSigner(OR, ETH, false));
+		expect(OffchainVerifier.isOffchainSigner(OR, ETH)).resolves.toBeFalse();
 	});
 
 	test("UnreachableName", async () => {
@@ -290,16 +289,15 @@ describe("e2e", async () => {
 
 	test("UR: multicall() w/o Multicall feature", async () => {
 		// deploy a modified OffchainResolver disabled features
-		const HR = await F.deploy({
-			sol: `import "@src/OffchainResolver.sol";
-				contract HR is OffchainResolver {
-					constructor(address[] memory ss, IOffchainVerifier v) OffchainResolver(msg.sender, v, ss, new string[](0)) {}
-					function supportsFeature(bytes4) external pure override returns (bool) {
-						return false;
-					}
-				}`,
-			args: [[S.signer], OffchainVerifier],
-		});
+		const HR = await F.deploy(`import "@src/OffchainResolver.sol";
+			contract HR is OffchainResolver(msg.sender) {
+				function supportsFeature(bytes4) external pure override returns (bool) {
+					return false;
+				}
+			}
+		`);
+		await F.confirm(HR.setVerifier(OffchainVerifier));
+		await F.confirm(OffchainVerifier.setOffchainSigner(HR, S.signer, true));
 		await F.confirm(HR.setGateways([`${S.endpoint}/${HR.target}`]));
 		await F.confirm(ENS.setResolver(namehash("raffy.eth"), HR)); // replace resolver in registry
 		// setup local batch gateway to facilitate multicall
