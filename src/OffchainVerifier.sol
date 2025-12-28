@@ -8,11 +8,21 @@ import {
     IOffchainVerifierSigner
 } from "./IOffchainVerifier.sol";
 
-contract OffchainVerifier is IOffchainVerifier {
+contract OffchainVerifier is ERC165, IOffchainVerifier {
+    /// @inheritdoc ERC165
+    function supportsInterface(
+        bytes4 interfaceId
+    ) public view override returns (bool) {
+        return
+            interfaceId == type(IOffchainVerifier).interfaceId ||
+            super.supportsInterface(interfaceId);
+    }
+
+    /// @inheritdoc IOffchainVerifier
     function verifyResponse(
-        bytes memory request,
+        bytes calldata request,
         bytes calldata response
-    ) internal view returns (bytes memory) {
+    ) external view returns (bytes memory) {
         (bytes memory answer, uint64 expiry, bytes memory sig) = abi.decode(
             response,
             (bytes, uint64, bytes)
@@ -20,18 +30,19 @@ contract OffchainVerifier is IOffchainVerifier {
         if (expiry < block.timestamp) {
             revert CCIPReadExpired(expiry);
         }
+        /// forge-lint: disable-next-item(asm-keccak256)
         // standard "ens" offchain signing protocol
         bytes32 hash = keccak256(
             abi.encodePacked(
-                hex"1900",
-                address(msg.sender),
+                bytes2(0x1900),
+                msg.sender,
                 expiry,
                 keccak256(request), // original calldata, eg. msg.data
                 keccak256(answer) // response from server
             )
         );
         address signed = ECDSA.recover(hash, sig);
-        if (!IOffchainVerifierSigner(msg.sender).isTrusedSigner(signed)) {
+        if (!IOffchainVerifierSigner(msg.sender).isOffchainSigner(signed)) {
             revert CCIPReadUntrusted(signed);
         }
         return answer;

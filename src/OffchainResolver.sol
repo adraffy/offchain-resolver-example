@@ -6,17 +6,20 @@ import {ERC165} from "@oz/utils/introspection/ERC165.sol";
 import {IERC7996} from "@ens/utils/IERC7996.sol";
 import {ResolverFeatures} from "@ens/resolvers/ResolverFeatures.sol";
 import {IExtendedResolver} from "@ens/resolvers/profiles/IExtendedResolver.sol";
-import {IVerifiableResolver} from "@ens/resolvers/profiles/IVerifiableResolver.sol";
+import {
+    IVerifiableResolver
+} from "@ens/resolvers/profiles/IVerifiableResolver.sol";
 import {OffchainLookup} from "@ens/ccipRead/EIP3668.sol";
+import {IOffchainVerifier, IOffchainVerifierSigner} from "./IOffchainVerifier.sol";
 
 contract OffchainResolver is
     Ownable,
     ERC165,
     IExtendedResolver,
     IVerifiableResolver,
+    IOffchainVerifierSigner,
     IERC7996
 {
-
     event SignerChanged(address signer, bool enabled);
     event GatewaysChanged(string[] gateways);
 
@@ -24,20 +27,24 @@ contract OffchainResolver is
     string[] _gateways;
 
     /// @notice Determine if `signer` is a trusted signer.
-    mapping(address signer => bool enabled) public isSigner;
+    mapping(address signer => bool enabled) public isOffchainSigner;
 
     constructor(
         address owner,
+        IOffchainVerifier verifier,
         address[] memory signers,
-        string[] memory gateways_
+        string[] memory gateways
     ) Ownable(owner) {
+        _verifier = verifier;
         for (uint256 i; i < signers.length; ++i) {
             address signer = signers[i];
-            isSigner[signer] = true;
+            isOffchainSigner[signer] = true;
             emit SignerChanged(signer, true);
         }
-        _gateways = gateways_;
-        emit GatewaysChanged(gateways_);
+        if (gateways.length > 0) {
+            _gateways = gateways;
+            emit GatewaysChanged(gateways);
+        }
     }
 
     /// @inheritdoc ERC165
@@ -59,14 +66,16 @@ contract OffchainResolver is
     }
 
     /// @inheritdoc IVerifiableResolver
-    function verifierMetadata(bytes) external view returns (address verifier, string[] memory gateways) {
-        return (_verifier, _gateways);
+    function verifierMetadata(
+        bytes calldata /*name*/
+    ) external view returns (address verifier, string[] memory gateways) {
+        return (address(_verifier), _gateways);
     }
 
     /// @notice Set `signer` as an trusted signer.
     function setSigner(address signer, bool enabled) external onlyOwner {
-        require(isSigner[signer] != enabled);
-        isSigner[signer] = enabled;
+        require(isOffchainSigner[signer] != enabled);
+        isOffchainSigner[signer] = enabled;
         emit SignerChanged(signer, enabled);
     }
 
@@ -97,5 +106,4 @@ contract OffchainResolver is
     ) external view returns (bytes memory) {
         return _verifier.verifyResponse(request, response);
     }
-
 }
