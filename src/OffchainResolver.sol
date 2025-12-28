@@ -3,26 +3,24 @@ pragma solidity >=0.8.13;
 
 import {Ownable} from "@oz/access/Ownable.sol";
 import {ERC165} from "@oz/utils/introspection/ERC165.sol";
-import {ECDSA} from "@oz/utils/cryptography/ECDSA.sol";
 import {IERC7996} from "@ens/utils/IERC7996.sol";
 import {ResolverFeatures} from "@ens/resolvers/ResolverFeatures.sol";
 import {IExtendedResolver} from "@ens/resolvers/profiles/IExtendedResolver.sol";
+import {IVerifiableResolver} from "@ens/resolvers/profiles/IVerifiableResolver.sol";
 import {OffchainLookup} from "@ens/ccipRead/EIP3668.sol";
-import {IGatewayProvider} from "@ens/ccipRead/IGatewayProvider.sol";
 
 contract OffchainResolver is
     Ownable,
     ERC165,
     IExtendedResolver,
-    IGatewayProvider,
+    IVerifiableResolver,
     IERC7996
 {
-    error CCIPReadExpired(uint64 expiry);
-    error CCIPReadUntrusted(address signed);
 
     event SignerChanged(address signer, bool enabled);
     event GatewaysChanged(string[] gateways);
 
+    IOffchainVerifier _verifier;
     string[] _gateways;
 
     /// @notice Determine if `signer` is a trusted signer.
@@ -48,8 +46,8 @@ contract OffchainResolver is
     ) public view override returns (bool) {
         return
             interfaceId == type(IExtendedResolver).interfaceId ||
+            interfaceId == type(IVerifiableResolver).interfaceId ||
             interfaceId == type(IERC7996).interfaceId ||
-            interfaceId == type(IGatewayProvider).interfaceId ||
             super.supportsInterface(interfaceId);
     }
 
@@ -58,6 +56,11 @@ contract OffchainResolver is
         bytes4 featureId
     ) external pure virtual returns (bool) {
         return featureId == ResolverFeatures.RESOLVE_MULTICALL;
+    }
+
+    /// @inheritdoc IVerifiableResolver
+    function verifierMetadata(bytes) external view returns (address verifier, string[] memory gateways) {
+        return (_verifier, _gateways);
     }
 
     /// @notice Set `signer` as an trusted signer.
@@ -71,11 +74,6 @@ contract OffchainResolver is
     function setGateways(string[] memory gateways_) external onlyOwner {
         _gateways = gateways_;
         emit GatewaysChanged(gateways_);
-    }
-
-    /// @inheritdoc IGatewayProvider
-    function gateways() external view returns (string[] memory) {
-        return _gateways;
     }
 
     /// @inheritdoc IExtendedResolver
@@ -97,35 +95,7 @@ contract OffchainResolver is
         bytes calldata response,
         bytes calldata request
     ) external view returns (bytes memory) {
-        return _verifyResponse(request, response);
+        return _verifier.verifyResponse(request, response);
     }
 
-    /// @dev Verify `signedResponse` was signed by `signer`.
-    function _verifyResponse(
-        bytes memory request,
-        bytes calldata response
-    ) internal view returns (bytes memory) {
-        (bytes memory answer, uint64 expiry, bytes memory sig) = abi.decode(
-            response,
-            (bytes, uint64, bytes)
-        );
-        if (expiry < block.timestamp) {
-            revert CCIPReadExpired(expiry);
-        }
-        // standard "ens" offchain signing protocol
-        bytes32 hash = keccak256(
-            abi.encodePacked(
-                hex"1900",
-                address(this),
-                expiry,
-                keccak256(request), // original calldata, eg. msg.data
-                keccak256(answer) // response from server
-            )
-        );
-        address signed = ECDSA.recover(hash, sig);
-        if (!isSigner[signed]) {
-            revert CCIPReadUntrusted(signed);
-        }
-        return answer;
-    }
 }
